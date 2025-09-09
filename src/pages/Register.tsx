@@ -1,13 +1,17 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GraduationCap, Eye, EyeOff, UserPlus } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Register() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -21,10 +25,45 @@ export default function Register() {
     semester: ""
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Implement registration logic
-    console.log("Registration attempt:", formData);
+    if (isSubmitting) return;
+
+    // Validações simples no cliente
+    if (formData.password !== formData.confirmPassword) {
+      toast({ title: "Senhas não conferem", description: "Verifique as senhas e tente novamente." });
+      return;
+    }
+
+    if (formData.password.length < 8) {
+      toast({ title: "Senha muito curta", description: "Use ao menos 8 caracteres." });
+      return;
+    }
+
+    if (!formData.semester) {
+      toast({ title: "Selecione o semestre", description: "Escolha seu semestre atual." });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      // Simulação de cadastro. Substituir por chamada à API quando disponível
+      await new Promise((res) => setTimeout(res, 600));
+
+      toast({
+        title: "Conta criada",
+        description: "Você já pode fazer login.",
+      });
+
+      navigate("/auth/login", { replace: true });
+    } catch (error: any) {
+      toast({
+        title: "Erro ao cadastrar",
+        description: error?.message || "Tente novamente em instantes.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const semesters = Array.from({ length: 10 }, (_, i) => `${i + 1}º Semestre`);
@@ -207,15 +246,15 @@ export default function Register() {
                 </Label>
               </div>
 
-              <Button type="submit" className="w-full h-11 bg-gradient-primary hover:opacity-90 transition-opacity">
-                Criar Conta
+              <Button disabled={isSubmitting} type="submit" className="w-full h-11 bg-gradient-primary hover:opacity-90 transition-opacity">
+                {isSubmitting ? "Criando conta..." : "Criar Conta"}
               </Button>
             </form>
 
             <div className="mt-6 text-center text-sm">
               <span className="text-muted-foreground">Já tem uma conta? </span>
               <Link
-                to="/login"
+                to="/auth/login"
                 className="text-primary font-medium hover:text-primary/80 transition-colors"
               >
                 Faça login

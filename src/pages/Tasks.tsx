@@ -1,14 +1,121 @@
+import { useEffect, useMemo, useState } from "react";
 import { TaskCard } from "@/components/tasks/TaskCard";
-import { mockTasks } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Filter } from "lucide-react";
+import { tasksService } from "@/services/tasks";
+import { Task, Subject } from "@/types";
+import { TaskFormDialog, TaskFormValues } from "@/components/tasks/TaskFormDialog";
+import { useToast } from "@/hooks/use-toast";
+import { subjectsService } from "@/services/subjects";
 
 const Tasks = () => {
-  const pendingTasks = mockTasks.filter(task => task.status !== 'completed');
-  const completedTasks = mockTasks.filter(task => task.status === 'completed');
+  const { toast } = useToast();
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [subjectId, setSubjectId] = useState<string | "all">("all");
+  const [priority, setPriority] = useState<string | "all">("all");
+  const [sortBy, setSortBy] = useState<"dueDate" | "priority">("dueDate");
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [list, subs] = await Promise.all([tasksService.list(), subjectsService.list()]);
+        setTasks(list);
+        setSubjects(subs);
+      } catch (e: any) {
+        toast({ title: "Erro ao carregar dados", description: e?.message });
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const filtered = useMemo(() => {
+    const text = query.trim().toLowerCase();
+    let result = tasks.filter((t) => {
+      const matchesText = !text || `${t.title} ${t.description ?? ""}`.toLowerCase().includes(text);
+      const matchesSubject = subjectId === "all" || t.subject.id === subjectId;
+      const matchesPriority = priority === "all" || t.priority === priority;
+      return matchesText && matchesSubject && matchesPriority;
+    });
+
+    if (sortBy === "dueDate") {
+      result = result.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+    } else if (sortBy === "priority") {
+      const order = { high: 0, medium: 1, low: 2 } as const;
+      result = result.sort((a, b) => order[a.priority] - order[b.priority]);
+    }
+
+    return result;
+  }, [tasks, query, subjectId, priority, sortBy]);
+
+  const pendingTasks = filtered.filter((task) => task.status !== "completed");
+  const completedTasks = filtered.filter((task) => task.status === "completed");
+
+  const openCreate = () => {
+    setEditingTask(null);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (task: Task) => {
+    setEditingTask(task);
+    setDialogOpen(true);
+  };
+
+  const handleSubmit = async (values: TaskFormValues) => {
+    const subject = subjects.find((s) => s.id === values.subjectId)!;
+    const payload: Partial<Task> = {
+      title: values.title,
+      description: values.description,
+      subject,
+      dueDate: new Date(values.dueDate),
+      priority: values.priority,
+      tags: values.tags ? values.tags.split(",").map((t) => t.trim()).filter(Boolean) : [],
+      estimatedTime: values.estimatedTime,
+      status: editingTask?.status ?? "todo",
+    };
+
+    try {
+      if (editingTask) {
+        const updated = await tasksService.update(editingTask.id, payload);
+        setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+        toast({ title: "Tarefa atualizada" });
+      } else {
+        const created = await tasksService.create(payload);
+        setTasks((prev) => [created, ...prev]);
+        toast({ title: "Tarefa criada" });
+      }
+    } catch (e: any) {
+      toast({ title: "Erro ao salvar tarefa", description: e?.message });
+    }
+  };
+
+  const handleDelete = async (task: Task) => {
+    try {
+      await tasksService.remove(task.id);
+      setTasks((prev) => prev.filter((t) => t.id !== task.id));
+      toast({ title: "Tarefa excluída" });
+    } catch (e: any) {
+      toast({ title: "Erro ao excluir tarefa", description: e?.message });
+    }
+  };
+
+  const handleStatusChange = async (taskId: string, status: Task["status"]) => {
+    try {
+      const updated = await tasksService.setStatus(taskId, status);
+      setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    } catch (e: any) {
+      toast({ title: "Erro ao atualizar status", description: e?.message });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -22,7 +129,7 @@ const Tasks = () => {
             Gerencie todas as suas tarefas acadêmicas
           </p>
         </div>
-        <Button className="bg-gradient-primary hover:opacity-90 text-white shadow-glow">
+        <Button onClick={openCreate} className="bg-gradient-primary hover:opacity-90 text-white shadow-glow">
           <Plus className="w-4 h-4 mr-2" />
           Nova Tarefa
         </Button>
@@ -33,22 +140,24 @@ const Tasks = () => {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar tarefas..."
             className="pl-10 bg-muted/50 border-muted focus:bg-background"
           />
         </div>
-        <Select>
-          <SelectTrigger className="w-[180px]">
+        <Select value={subjectId} onValueChange={(v) => setSubjectId(v)}>
+          <SelectTrigger className="w-[220px]">
             <SelectValue placeholder="Filtrar por matéria" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas as matérias</SelectItem>
-            <SelectItem value="math">Matemática</SelectItem>
-            <SelectItem value="history">História</SelectItem>
-            <SelectItem value="physics">Física</SelectItem>
+            {subjects.map((s) => (
+              <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
-        <Select>
+        <Select value={priority} onValueChange={(v) => setPriority(v)}>
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Prioridade" />
           </SelectTrigger>
@@ -57,6 +166,15 @@ const Tasks = () => {
             <SelectItem value="high">Alta</SelectItem>
             <SelectItem value="medium">Média</SelectItem>
             <SelectItem value="low">Baixa</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={sortBy} onValueChange={(v: any) => setSortBy(v)}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="Ordenar por" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="dueDate">Entrega</SelectItem>
+            <SelectItem value="priority">Prioridade</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -71,11 +189,15 @@ const Tasks = () => {
               {pendingTasks.length}
             </Badge>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {pendingTasks.map((task) => (
-              <TaskCard key={task.id} task={task} />
-            ))}
-          </div>
+          {loading ? (
+            <div className="text-sm text-muted-foreground">Carregando...</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {pendingTasks.map((task) => (
+                <TaskCard key={task.id} task={task} onEdit={openEdit} onStatusChange={handleStatusChange} />
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Completed Tasks */}
@@ -86,13 +208,24 @@ const Tasks = () => {
               {completedTasks.length}
             </Badge>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {completedTasks.map((task) => (
-              <TaskCard key={task.id} task={task} />
-            ))}
-          </div>
+          {loading ? (
+            <div className="text-sm text-muted-foreground">Carregando...</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {completedTasks.map((task) => (
+                <TaskCard key={task.id} task={task} onEdit={openEdit} onStatusChange={handleStatusChange} />
+              ))}
+            </div>
+          )}
         </section>
       </div>
+
+      <TaskFormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        initialTask={editingTask}
+        onSubmit={handleSubmit}
+      />
     </div>
   );
 };

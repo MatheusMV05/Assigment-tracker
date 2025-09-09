@@ -1,22 +1,53 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { GraduationCap, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Login() {
+  const navigate = useNavigate();
+  const { login } = useAuth();
+  const { toast } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     email: "",
     password: ""
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Implement login logic
-    console.log("Login attempt:", formData);
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
+    try {
+      // Simulação de autenticação. Trocar por chamada à API quando disponível
+      if (!formData.email || !formData.password) {
+        throw new Error("Preencha email e senha");
+      }
+
+      // Exemplo de validação simples
+      const fakeToken = "demo-token";
+      login(fakeToken);
+
+      toast({
+        title: "Login realizado",
+        description: "Bem-vindo de volta!",
+      });
+
+      navigate("/", { replace: true });
+    } catch (error: any) {
+      toast({
+        title: "Falha no login",
+        description: error?.message || "Verifique suas credenciais e tente novamente.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -97,15 +128,15 @@ export default function Login() {
                 </Link>
               </div>
 
-              <Button type="submit" className="w-full h-11 bg-gradient-primary hover:opacity-90 transition-opacity">
-                Entrar
+              <Button disabled={isSubmitting} type="submit" className="w-full h-11 bg-gradient-primary hover:opacity-90 transition-opacity">
+                {isSubmitting ? "Entrando..." : "Entrar"}
               </Button>
             </form>
 
             <div className="mt-6 text-center text-sm">
               <span className="text-muted-foreground">Não tem uma conta? </span>
               <Link
-                to="/register"
+                to="/auth/register"
                 className="text-primary font-medium hover:text-primary/80 transition-colors"
               >
                 Cadastre-se
